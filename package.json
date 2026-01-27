@@ -1,0 +1,36 @@
+{
+  "name": "linkshare",
+  "version": "1.0.0",
+  "description": "Link sharing app with folder structure",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-builder"
+  },
+  "build": {
+    "appId": "com.linkshare.app",
+    "productName": "LinkShare",
+    "win": {
+      "target": "nsis",
+      "sign": false,
+      "artifactName": "LinkShare_Setup.${ext}"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html"
+    ],
+    "publish": {
+      "provider": "github",
+      "owner": "HTTLseongho",
+      "repo": "LinkShare"
+    }
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.0"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  }
+}

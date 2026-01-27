@@ -1,0 +1,547 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>LinkShare</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            bg: { main: '#0f0f0f', side: '#1a1a1a', card: '#222222', hover: '#2a2a2a' },
+            border: '#333333',
+            txt: { primary: '#e5e5e5', secondary: '#888888', disabled: '#555555' },
+            accent: { blue: '#3b82f6', green: '#22c55e', red: '#ef4444' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #333; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: #555; }
+    .tree-item { cursor: pointer; transition: all 0.15s; }
+    .tree-item:hover { background: rgba(255,255,255,0.05); }
+    .tree-item.selected { background: rgba(59,130,246,0.15); color: #3b82f6; }
+    .link-card { cursor: pointer; transition: all 0.2s; }
+    .link-card:hover { background: #2a2a2a; border-color: #444; }
+    .link-card.selected { border-color: #3b82f6; background: rgba(59,130,246,0.08); }
+    .action-btn { transition: all 0.2s; }
+    .action-btn:hover:not(:disabled) { transform: translateY(-1px); }
+    .action-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .drag-region { -webkit-app-region: drag; }
+    .no-drag { -webkit-app-region: no-drag; }
+    .modal-overlay { background: rgba(0,0,0,0.6); backdrop-filter: blur(4px); }
+  </style>
+</head>
+<body class="bg-bg-main text-txt-primary w-screen h-screen flex flex-col">
+
+  <!-- Title Bar -->
+  <div class="drag-region flex items-center justify-between px-4 h-10 bg-bg-main border-b border-border shrink-0">
+    <span class="text-sm font-semibold tracking-wide">LinkShare</span>
+    <div class="no-drag flex items-center gap-3 text-xs text-txt-secondary">
+      <button onclick="showLogs()" class="hover:text-txt-primary transition">기록</button>
+    </div>
+  </div>
+
+  <!-- Content Area -->
+  <div class="flex flex-1 overflow-hidden">
+
+    <!-- Left: Directory Tree -->
+    <div class="w-64 shrink-0 bg-bg-side border-r border-border flex flex-col overflow-hidden">
+      <div class="p-3 text-xs text-txt-secondary font-medium uppercase tracking-wider">디렉토리</div>
+      <div id="tree" class="flex-1 overflow-y-auto px-2 pb-4" onclick="if(event.target===this||event.target.id==='tree'){selectedFolderId=null;selectedLinkId=null;updateUI();}"></div>
+    </div>
+
+    <!-- Right: Link Cards -->
+    <div class="flex-1 flex flex-col overflow-hidden">
+      <div class="p-4 border-b border-border flex items-center gap-2">
+        <span id="currentPath" class="text-sm text-txt-secondary">폴더를 선택하세요</span>
+      </div>
+      <div id="links" class="flex-1 overflow-y-auto p-4 grid grid-cols-1 gap-3 content-start"></div>
+      <div id="emptyLinks" class="flex-1 items-center justify-center text-txt-disabled text-sm hidden">
+        <span>이 폴더에 링크가 없습니다</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Bar -->
+  <div class="shrink-0 border-t border-border bg-bg-side px-5 py-3">
+    <div class="flex items-center justify-between">
+      <span id="selectionInfo" class="text-xs text-txt-secondary">항목을 선택하세요</span>
+      <div class="flex gap-2">
+        <button id="btnAddFolder" onclick="showAddFolderModal()" disabled
+          class="action-btn px-3 py-1.5 bg-accent-blue/20 text-accent-blue text-xs rounded-lg border border-accent-blue/30 hover:bg-accent-blue/30">
+          + 폴더 추가
+        </button>
+        <button id="btnAddLink" onclick="showAddLinkModal()" disabled
+          class="action-btn px-3 py-1.5 bg-accent-green/20 text-accent-green text-xs rounded-lg border border-accent-green/30 hover:bg-accent-green/30">
+          + 링크 추가
+        </button>
+        <button id="btnRename" onclick="showRenameModal()" disabled
+          class="action-btn px-3 py-1.5 bg-bg-card text-txt-secondary text-xs rounded-lg border border-border hover:text-txt-primary">
+          ✏️ 이름 변경
+        </button>
+        <button id="btnDelete" onclick="deleteSelected()" disabled
+          class="action-btn px-3 py-1.5 bg-accent-red/20 text-accent-red text-xs rounded-lg border border-accent-red/30 hover:bg-accent-red/30">
+          🗑 삭제
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div id="modal" class="fixed inset-0 modal-overlay z-50 hidden items-center justify-center">
+    <div class="bg-bg-card rounded-xl border border-border shadow-2xl w-96 p-6">
+      <h3 id="modalTitle" class="text-base font-semibold mb-4"></h3>
+      <div id="modalBody"></div>
+      <div class="flex justify-end gap-2 mt-5">
+        <button onclick="closeModal()" class="px-4 py-2 text-xs text-txt-secondary rounded-lg border border-border hover:bg-bg-hover transition">취소</button>
+        <button id="modalConfirm" class="px-4 py-2 text-xs text-white bg-accent-blue rounded-lg hover:bg-blue-600 transition">확인</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs Modal -->
+  <div id="logsModal" class="fixed inset-0 modal-overlay z-50 hidden items-center justify-center">
+    <div class="bg-bg-card rounded-xl border border-border shadow-2xl w-[500px] max-h-[70vh] flex flex-col p-6">
+      <div class="flex items-center justify-between mb-4">
+        <h3 class="text-base font-semibold">수정 기록</h3>
+        <button onclick="closeLogsModal()" class="text-txt-secondary hover:text-txt-primary transition text-lg">✕</button>
+      </div>
+      <div id="logsList" class="flex-1 overflow-y-auto space-y-2"></div>
+    </div>
+  </div>
+
+<script>
+// ── Data Store (localStorage for v1) ──
+let folders = JSON.parse(localStorage.getItem('ls_folders') || '[]');
+let links = JSON.parse(localStorage.getItem('ls_links') || '[]');
+let logs = JSON.parse(localStorage.getItem('ls_logs') || '[]');
+
+let selectedFolderId = null;
+let selectedLinkId = null;
+
+function save() {
+  localStorage.setItem('ls_folders', JSON.stringify(folders));
+  localStorage.setItem('ls_links', JSON.stringify(links));
+  localStorage.setItem('ls_logs', JSON.stringify(logs));
+}
+
+function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+
+function addLog(action, target, targetId, targetName, detail) {
+  logs.unshift({ id: genId(), action, target, targetId, targetName, timestamp: Date.now(), detail });
+  save();
+}
+
+// ── Tree Rendering ──
+function renderTree() {
+  const tree = document.getElementById('tree');
+  tree.innerHTML = '';
+
+  const sharedRoots = folders.filter(f => !f.parentId && f.type === 'shared');
+  const privateRoots = folders.filter(f => !f.parentId && f.type === 'private');
+
+  if (sharedRoots.length > 0 || privateRoots.length > 0 || folders.length === 0) {
+    const sharedLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-1', '── 공유 ──');
+    tree.appendChild(sharedLabel);
+    sharedRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
+
+    const privateLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-3', '── 개인 ──');
+    tree.appendChild(privateLabel);
+    privateRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
+  }
+}
+
+function renderTreeItem(folder, depth) {
+  const children = folders.filter(f => f.parentId === folder.id);
+  const wrapper = document.createElement('div');
+
+  const item = el('div', `tree-item flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-sm ${folder.id === selectedFolderId ? 'selected' : ''}`, '');
+  item.style.paddingLeft = (8 + depth * 16) + 'px';
+  item.dataset.id = folder.id;
+
+  const icon = folder.type === 'private' ? '🔒' : '📁';
+  item.innerHTML = `<span>${icon}</span><span class="truncate flex-1">${esc(folder.name)}</span>${folder.id === selectedFolderId ? '<span class="text-accent-blue text-xs">◀</span>' : ''}`;
+
+  item.addEventListener('click', () => selectFolder(folder.id));
+
+  wrapper.appendChild(item);
+  children.forEach(c => wrapper.appendChild(renderTreeItem(c, depth + 1)));
+  return wrapper;
+}
+
+// ── Link Rendering ──
+function renderLinks() {
+  const container = document.getElementById('links');
+  const empty = document.getElementById('emptyLinks');
+  container.innerHTML = '';
+
+  if (!selectedFolderId) {
+    container.classList.add('hidden');
+    empty.classList.remove('hidden');
+    empty.classList.add('flex');
+    empty.querySelector('span').textContent = '폴더를 선택하세요';
+    return;
+  }
+
+  const folderLinks = links.filter(l => l.folderId === selectedFolderId);
+
+  if (folderLinks.length === 0) {
+    container.classList.add('hidden');
+    empty.classList.remove('hidden');
+    empty.classList.add('flex');
+    empty.querySelector('span').textContent = '이 폴더에 링크가 없습니다';
+    return;
+  }
+
+  empty.classList.add('hidden');
+  empty.classList.remove('flex');
+  container.classList.remove('hidden');
+
+  folderLinks.forEach(link => {
+    const card = document.createElement('div');
+    card.className = `link-card flex items-center gap-4 p-4 bg-bg-card rounded-xl border border-border ${link.id === selectedLinkId ? 'selected' : ''}`;
+    card.dataset.id = link.id;
+
+    const thumbSrc = link.ogImage || link.favicon || '';
+    const thumbHtml = thumbSrc
+      ? `<img src="${esc(thumbSrc)}" class="w-16 h-16 rounded-lg object-cover bg-bg-hover shrink-0" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+        + `<div class="w-16 h-16 rounded-lg bg-bg-hover shrink-0 items-center justify-center text-2xl hidden">🔗</div>`
+      : `<div class="w-16 h-16 rounded-lg bg-bg-hover shrink-0 flex items-center justify-center text-2xl">🔗</div>`;
+
+    const title = link.ogTitle || link.title || link.url;
+    const desc = link.ogDescription || '';
+    const domain = getDomain(link.url);
+
+    card.innerHTML = `
+      ${thumbHtml}
+      <div class="flex-1 min-w-0">
+        <div class="text-sm font-medium truncate">${esc(title)}</div>
+        ${desc ? `<div class="text-xs text-txt-secondary mt-0.5 line-clamp-2">${esc(desc)}</div>` : ''}
+        <div class="text-xs text-txt-disabled mt-1">${esc(domain)}</div>
+      </div>
+    `;
+
+    card.addEventListener('click', (e) => { e.stopPropagation(); selectLink(link.id); });
+    card.addEventListener('dblclick', () => { window.electronAPI.openExternal(link.url); });
+    container.appendChild(card);
+  });
+}
+
+// ── Selection ──
+function selectFolder(id) {
+  selectedFolderId = id;
+  selectedLinkId = null;
+  updateUI();
+}
+
+function selectLink(id) {
+  selectedLinkId = id;
+  updateUI();
+}
+
+function updateUI() {
+  renderTree();
+  renderLinks();
+  updatePath();
+  updateActionBar();
+}
+
+function updatePath() {
+  const pathEl = document.getElementById('currentPath');
+  if (!selectedFolderId) { pathEl.textContent = '폴더를 선택하세요'; return; }
+  const parts = [];
+  let current = folders.find(f => f.id === selectedFolderId);
+  while (current) {
+    parts.unshift(current.name);
+    current = current.parentId ? folders.find(f => f.id === current.parentId) : null;
+  }
+  pathEl.textContent = parts.join(' > ');
+}
+
+function updateActionBar() {
+  const info = document.getElementById('selectionInfo');
+  const btnAddFolder = document.getElementById('btnAddFolder');
+  const btnAddLink = document.getElementById('btnAddLink');
+  const btnRename = document.getElementById('btnRename');
+  const btnDelete = document.getElementById('btnDelete');
+
+  if (selectedLinkId) {
+    const link = links.find(l => l.id === selectedLinkId);
+    info.textContent = `선택: 🔗 ${link ? link.title || link.url : ''}`;
+    btnAddFolder.disabled = true;
+    btnAddLink.disabled = true;
+    btnRename.disabled = false;
+    btnDelete.disabled = false;
+  } else if (selectedFolderId) {
+    const folder = folders.find(f => f.id === selectedFolderId);
+    const icon = folder && folder.type === 'private' ? '🔒' : '📁';
+    info.textContent = `선택: ${icon} ${folder ? folder.name : ''}`;
+    btnAddFolder.disabled = false;
+    btnAddLink.disabled = false;
+    btnRename.disabled = false;
+    btnDelete.disabled = false;
+  } else {
+    info.textContent = '항목을 선택하세요';
+    btnAddFolder.disabled = false;
+    btnAddLink.disabled = true;
+    btnRename.disabled = true;
+    btnDelete.disabled = true;
+  }
+}
+
+// ── Modals ──
+function openModal(title, bodyHtml, onConfirm) {
+  document.getElementById('modalTitle').textContent = title;
+  document.getElementById('modalBody').innerHTML = bodyHtml;
+  document.getElementById('modal').classList.remove('hidden');
+  document.getElementById('modal').classList.add('flex');
+  document.getElementById('modalConfirm').onclick = () => { onConfirm(); closeModal(); };
+  const input = document.querySelector('#modalBody input');
+  if (input) setTimeout(() => input.focus(), 100);
+}
+
+function closeModal() {
+  document.getElementById('modal').classList.add('hidden');
+  document.getElementById('modal').classList.remove('flex');
+}
+
+function showAddFolderModal() {
+  const isRoot = !selectedFolderId;
+  const typeSelect = isRoot
+    ? `<div class="mb-3">
+        <label class="text-xs text-txt-secondary block mb-1">유형</label>
+        <div class="flex gap-2">
+          <label class="flex-1 flex items-center gap-2 p-2 rounded-lg border border-border cursor-pointer has-[:checked]:border-accent-blue has-[:checked]:bg-accent-blue/10">
+            <input type="radio" name="folderType" value="shared" checked class="accent-accent-blue"> <span class="text-sm">📁 공유</span>
+          </label>
+          <label class="flex-1 flex items-center gap-2 p-2 rounded-lg border border-border cursor-pointer has-[:checked]:border-accent-blue has-[:checked]:bg-accent-blue/10">
+            <input type="radio" name="folderType" value="private" class="accent-accent-blue"> <span class="text-sm">🔒 개인</span>
+          </label>
+        </div>
+      </div>`
+    : '';
+
+  openModal('폴더 추가', `
+    ${typeSelect}
+    <label class="text-xs text-txt-secondary block mb-1">폴더 이름</label>
+    <input id="folderNameInput" type="text" placeholder="폴더 이름 입력" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
+  `, () => {
+    const name = document.getElementById('folderNameInput').value.trim();
+    if (!name) return;
+
+    let type, parentId;
+    if (selectedFolderId) {
+      const root = getRootFolder(selectedFolderId);
+      type = root.type;
+      parentId = selectedFolderId;
+    } else {
+      type = document.querySelector('input[name="folderType"]:checked')?.value || 'shared';
+      parentId = null;
+    }
+
+    const folder = { id: genId(), name, parentId, type, ownerId: type === 'private' ? 'local' : null, order: folders.length, createdAt: Date.now() };
+    folders.push(folder);
+    save();
+    addLog('create', 'folder', folder.id, name, `폴더 생성: ${name}`);
+    selectFolder(folder.id);
+  });
+}
+
+function showAddLinkModal() {
+  if (!selectedFolderId) return;
+
+  openModal('링크 추가', `
+    <label class="text-xs text-txt-secondary block mb-1">URL</label>
+    <input id="linkUrlInput" type="text" placeholder="https://example.com" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition mb-3">
+    <label class="text-xs text-txt-secondary block mb-1">제목 (비워두면 자동 추출)</label>
+    <input id="linkTitleInput" type="text" placeholder="선택사항" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
+    <div id="ogStatus" class="text-xs text-txt-disabled mt-2 hidden"></div>
+  `, async () => {
+    let url = document.getElementById('linkUrlInput').value.trim();
+    const title = document.getElementById('linkTitleInput').value.trim();
+    if (!url) return;
+    if (!url.startsWith('http')) url = 'https://' + url;
+
+    const link = { id: genId(), folderId: selectedFolderId, title: title || url, url, ogTitle: '', ogDescription: '', ogImage: '', favicon: '', order: links.length, createdAt: Date.now() };
+    links.push(link);
+    save();
+    addLog('create', 'link', link.id, link.title, `링크 추가: ${link.title} (${url})`);
+    updateUI();
+
+    // Fetch OG data in background
+    try {
+      const og = await window.electronAPI.fetchOG(url);
+      const idx = links.findIndex(l => l.id === link.id);
+      if (idx !== -1) {
+        if (og.ogTitle && !title) links[idx].title = og.ogTitle;
+        links[idx].ogTitle = og.ogTitle;
+        links[idx].ogDescription = og.ogDescription;
+        links[idx].ogImage = og.ogImage;
+        links[idx].favicon = og.favicon;
+        save();
+        updateUI();
+      }
+    } catch(e) {}
+  });
+}
+
+function showRenameModal() {
+  if (selectedLinkId) {
+    const link = links.find(l => l.id === selectedLinkId);
+    if (!link) return;
+    openModal('링크 수정', `
+      <label class="text-xs text-txt-secondary block mb-1">제목</label>
+      <input id="renameInput" type="text" value="${esc(link.title)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition mb-3">
+      <label class="text-xs text-txt-secondary block mb-1">URL</label>
+      <input id="renameUrlInput" type="text" value="${esc(link.url)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
+    `, () => {
+      const newTitle = document.getElementById('renameInput').value.trim();
+      const newUrl = document.getElementById('renameUrlInput').value.trim();
+      if (newTitle) link.title = newTitle;
+      if (newUrl) link.url = newUrl;
+      save();
+      addLog('update', 'link', link.id, link.title, `링크 수정: ${link.title}`);
+      updateUI();
+    });
+  } else if (selectedFolderId) {
+    const folder = folders.find(f => f.id === selectedFolderId);
+    if (!folder) return;
+    openModal('폴더 이름 변경', `
+      <label class="text-xs text-txt-secondary block mb-1">폴더 이름</label>
+      <input id="renameInput" type="text" value="${esc(folder.name)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
+    `, () => {
+      const newName = document.getElementById('renameInput').value.trim();
+      if (newName) {
+        folder.name = newName;
+        save();
+        addLog('update', 'folder', folder.id, newName, `폴더 이름 변경: ${newName}`);
+        updateUI();
+      }
+    });
+  }
+}
+
+function deleteSelected() {
+  if (selectedLinkId) {
+    const link = links.find(l => l.id === selectedLinkId);
+    if (!link) return;
+    openModal('링크 삭제', `
+      <p class="text-sm text-txt-secondary">"<span class="text-txt-primary">${esc(link.title)}</span>" 링크를 삭제하시겠습니까?</p>
+    `, () => {
+      links = links.filter(l => l.id !== selectedLinkId);
+      addLog('delete', 'link', link.id, link.title, `링크 삭제: ${link.title}`);
+      selectedLinkId = null;
+      save();
+      updateUI();
+    });
+  } else if (selectedFolderId) {
+    const folder = folders.find(f => f.id === selectedFolderId);
+    if (!folder) return;
+
+    const hasChildren = folders.some(f => f.parentId === selectedFolderId);
+    const hasLinks = links.some(l => l.folderId === selectedFolderId);
+    if (hasChildren || hasLinks) {
+      openModal('삭제 불가', `
+        <p class="text-sm text-txt-secondary">하위 항목이 있어 삭제할 수 없습니다.<br>하위 폴더와 링크를 먼저 삭제해주세요.</p>
+      `, () => {});
+      return;
+    }
+
+    openModal('폴더 삭제', `
+      <p class="text-sm text-txt-secondary">"<span class="text-txt-primary">${esc(folder.name)}</span>" 폴더를 삭제하시겠습니까?</p>
+    `, () => {
+      folders = folders.filter(f => f.id !== selectedFolderId);
+      addLog('delete', 'folder', folder.id, folder.name, `폴더 삭제: ${folder.name}`);
+      selectedFolderId = null;
+      save();
+      updateUI();
+    });
+  }
+}
+
+// ── Logs ──
+function showLogs() {
+  const list = document.getElementById('logsList');
+  list.innerHTML = '';
+  if (logs.length === 0) {
+    list.innerHTML = '<div class="text-center text-txt-disabled text-sm py-8">기록이 없습니다</div>';
+  } else {
+    logs.slice(0, 50).forEach(log => {
+      const time = getTimeAgo(log.timestamp);
+      const div = el('div', 'flex items-center gap-3 p-3 rounded-lg bg-bg-main text-sm', '');
+      const actionIcon = log.action === 'create' ? '➕' : log.action === 'update' ? '✏️' : '🗑';
+      div.innerHTML = `<span>${actionIcon}</span><span class="flex-1 text-txt-secondary">${esc(log.detail)}</span><span class="text-xs text-txt-disabled shrink-0">${time}</span>`;
+      list.appendChild(div);
+    });
+  }
+  document.getElementById('logsModal').classList.remove('hidden');
+  document.getElementById('logsModal').classList.add('flex');
+}
+
+function closeLogsModal() {
+  document.getElementById('logsModal').classList.add('hidden');
+  document.getElementById('logsModal').classList.remove('flex');
+}
+
+// ── Helpers ──
+function getRootFolder(folderId) {
+  let f = folders.find(x => x.id === folderId);
+  while (f && f.parentId) f = folders.find(x => x.id === f.parentId);
+  return f;
+}
+
+function getDomain(url) {
+  try { return new URL(url).hostname; } catch { return url; }
+}
+
+function getTimeAgo(ts) {
+  const diff = Date.now() - ts;
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return '방금 전';
+  if (mins < 60) return `${mins}분 전`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}시간 전`;
+  const days = Math.floor(hours / 24);
+  return `${days}일 전`;
+}
+
+function esc(str) {
+  const d = document.createElement('div');
+  d.textContent = str;
+  return d.innerHTML;
+}
+
+function el(tag, cls, text) {
+  const e = document.createElement(tag);
+  e.className = cls;
+  if (text) e.textContent = text;
+  return e;
+}
+
+// Click outside to deselect link
+document.addEventListener('click', (e) => {
+  if (!e.target.closest('.link-card') && !e.target.closest('.action-btn') && !e.target.closest('#modal') && selectedLinkId) {
+    selectedLinkId = null;
+    updateUI();
+  }
+});
+
+// Keyboard shortcut
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') { closeModal(); closeLogsModal(); }
+  if (e.key === 'Delete' && !document.querySelector('#modal:not(.hidden)')) deleteSelected();
+});
+
+// Init
+updateUI();
+</script>
+</body>
+</html>
