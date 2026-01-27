@@ -1,9 +1,34 @@
 const { app, BrowserWindow, Menu, shell, ipcMain } = require('electron');
 const path = require('path');
+const http = require('http');
+const fs = require('fs');
 
 let mainWindow;
+let server;
 
-function createWindow() {
+function startLocalServer() {
+  return new Promise((resolve) => {
+    server = http.createServer((req, res) => {
+      let filePath = path.join(__dirname, req.url === '/' ? 'index.html' : req.url);
+      const ext = path.extname(filePath);
+      const mimeTypes = { '.html': 'text/html', '.js': 'application/javascript', '.css': 'text/css' };
+      const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+      fs.readFile(filePath, (err, data) => {
+        if (err) { res.writeHead(404); res.end(); return; }
+        res.writeHead(200, { 'Content-Type': contentType + '; charset=utf-8' });
+        res.end(data);
+      });
+    });
+    server.listen(0, '127.0.0.1', () => {
+      resolve(server.address().port);
+    });
+  });
+}
+
+async function createWindow() {
+  const port = await startLocalServer();
+
   mainWindow = new BrowserWindow({
     width: 1100,
     height: 700,
@@ -24,7 +49,25 @@ function createWindow() {
   });
 
   Menu.setApplicationMenu(null);
-  mainWindow.loadFile('index.html');
+  mainWindow.loadURL(`http://127.0.0.1:${port}/`);
+
+  // Allow popups for Google OAuth
+  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (url.includes('accounts.google.com') || url.includes('googleapis.com') || url.includes('firebaseapp.com')) {
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          width: 500,
+          height: 700,
+          autoHideMenuBar: true,
+          parent: mainWindow,
+          modal: false
+        }
+      };
+    }
+    shell.openExternal(url);
+    return { action: 'deny' };
+  });
 }
 
 ipcMain.handle('open-external', (event, url) => {
@@ -76,5 +119,6 @@ ipcMain.handle('fetch-og', async (event, url) => {
 app.whenReady().then(createWindow);
 
 app.on('window-all-closed', () => {
+  if (server) server.close();
   app.quit();
 });

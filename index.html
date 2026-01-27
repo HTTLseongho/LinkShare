@@ -18,6 +18,47 @@
       }
     }
   </script>
+  <!-- Firebase SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-app.js";
+    import { getAuth, signInWithPopup, GoogleAuthProvider, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-auth.js";
+    import { getFirestore, collection, doc, addDoc, updateDoc, deleteDoc, onSnapshot, query, orderBy, where, getDocs } from "https://www.gstatic.com/firebasejs/11.7.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDQZ7hYU-QGCDp84ZbL402GGiCuLKHMRyQ",
+      authDomain: "linkshare-1b9c5.firebaseapp.com",
+      projectId: "linkshare-1b9c5",
+      storageBucket: "linkshare-1b9c5.firebasestorage.app",
+      messagingSenderId: "456458857608",
+      appId: "1:456458857608:web:286c980d09c70e7b26833d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    // Expose to global scope for inline handlers
+    window.fbAuth = auth;
+    window.fbDb = db;
+    window.fbSignInWithPopup = signInWithPopup;
+    window.fbGoogleProvider = new GoogleAuthProvider();
+    window.fbSignOut = signOut;
+    window.fbOnAuthStateChanged = onAuthStateChanged;
+    window.fbCollection = collection;
+    window.fbDoc = doc;
+    window.fbAddDoc = addDoc;
+    window.fbUpdateDoc = updateDoc;
+    window.fbDeleteDoc = deleteDoc;
+    window.fbOnSnapshot = onSnapshot;
+    window.fbQuery = query;
+    window.fbOrderBy = orderBy;
+    window.fbWhere = where;
+    window.fbGetDocs = getDocs;
+
+    // Signal that Firebase is ready
+    window.firebaseReady = true;
+    if (window.onFirebaseReady) window.onFirebaseReady();
+  </script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; overflow: hidden; }
@@ -41,56 +82,72 @@
 </head>
 <body class="bg-bg-main text-txt-primary w-screen h-screen flex flex-col">
 
-  <!-- Title Bar -->
-  <div class="drag-region flex items-center justify-between px-4 h-10 bg-bg-main border-b border-border shrink-0">
-    <span class="text-sm font-semibold tracking-wide">LinkShare</span>
-    <div class="no-drag flex items-center gap-3 text-xs text-txt-secondary">
-      <button onclick="showLogs()" class="hover:text-txt-primary transition">기록</button>
-    </div>
+  <!-- Login Screen -->
+  <div id="loginScreen" class="flex-1 flex flex-col items-center justify-center gap-6">
+    <div class="text-3xl font-bold tracking-wide">LinkShare</div>
+    <div class="text-sm text-txt-secondary">링크를 폴더로 정리하고 공유하세요</div>
+    <button id="loginBtn" onclick="doLogin()" class="mt-4 px-6 py-3 bg-white text-black text-sm font-medium rounded-xl hover:bg-gray-200 transition flex items-center gap-3">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Google로 로그인
+    </button>
+    <div id="loginError" class="text-xs text-accent-red hidden"></div>
   </div>
 
-  <!-- Content Area -->
-  <div class="flex flex-1 overflow-hidden">
+  <!-- Main App (hidden until login) -->
+  <div id="mainApp" class="flex-1 flex flex-col hidden">
 
-    <!-- Left: Directory Tree -->
-    <div class="w-64 shrink-0 bg-bg-side border-r border-border flex flex-col overflow-hidden">
-      <div class="p-3 text-xs text-txt-secondary font-medium uppercase tracking-wider">디렉토리</div>
-      <div id="tree" class="flex-1 overflow-y-auto px-2 pb-4" onclick="if(event.target===this||event.target.id==='tree'){selectedFolderId=null;selectedLinkId=null;updateUI();}"></div>
-    </div>
-
-    <!-- Right: Link Cards -->
-    <div class="flex-1 flex flex-col overflow-hidden">
-      <div class="p-4 border-b border-border flex items-center gap-2">
-        <span id="currentPath" class="text-sm text-txt-secondary">폴더를 선택하세요</span>
-      </div>
-      <div id="links" class="flex-1 overflow-y-auto p-4 grid grid-cols-1 gap-3 content-start"></div>
-      <div id="emptyLinks" class="flex-1 items-center justify-center text-txt-disabled text-sm hidden">
-        <span>이 폴더에 링크가 없습니다</span>
+    <!-- Title Bar -->
+    <div class="drag-region flex items-center justify-between px-4 h-10 bg-bg-main border-b border-border shrink-0">
+      <span class="text-sm font-semibold tracking-wide">LinkShare</span>
+      <div class="no-drag flex items-center gap-3 text-xs text-txt-secondary">
+        <span id="userName" class="text-txt-primary"></span>
+        <button onclick="showLogs()" class="hover:text-txt-primary transition">기록</button>
+        <button onclick="doLogout()" class="hover:text-accent-red transition">로그아웃</button>
       </div>
     </div>
-  </div>
 
-  <!-- Action Bar -->
-  <div class="shrink-0 border-t border-border bg-bg-side px-5 py-3">
-    <div class="flex items-center justify-between">
-      <span id="selectionInfo" class="text-xs text-txt-secondary">항목을 선택하세요</span>
-      <div class="flex gap-2">
-        <button id="btnAddFolder" onclick="showAddFolderModal()" disabled
-          class="action-btn px-3 py-1.5 bg-accent-blue/20 text-accent-blue text-xs rounded-lg border border-accent-blue/30 hover:bg-accent-blue/30">
-          + 폴더 추가
-        </button>
-        <button id="btnAddLink" onclick="showAddLinkModal()" disabled
-          class="action-btn px-3 py-1.5 bg-accent-green/20 text-accent-green text-xs rounded-lg border border-accent-green/30 hover:bg-accent-green/30">
-          + 링크 추가
-        </button>
-        <button id="btnRename" onclick="showRenameModal()" disabled
-          class="action-btn px-3 py-1.5 bg-bg-card text-txt-secondary text-xs rounded-lg border border-border hover:text-txt-primary">
-          ✏️ 이름 변경
-        </button>
-        <button id="btnDelete" onclick="deleteSelected()" disabled
-          class="action-btn px-3 py-1.5 bg-accent-red/20 text-accent-red text-xs rounded-lg border border-accent-red/30 hover:bg-accent-red/30">
-          🗑 삭제
-        </button>
+    <!-- Content Area -->
+    <div class="flex flex-1 overflow-hidden">
+      <!-- Left: Directory Tree -->
+      <div class="w-64 shrink-0 bg-bg-side border-r border-border flex flex-col overflow-hidden">
+        <div class="p-3 text-xs text-txt-secondary font-medium uppercase tracking-wider">디렉토리</div>
+        <div id="tree" class="flex-1 overflow-y-auto px-2 pb-4" onclick="if(event.target===this||event.target.id==='tree'){selectedFolderId=null;selectedLinkId=null;updateUI();}"></div>
+      </div>
+
+      <!-- Right: Link Cards -->
+      <div class="flex-1 flex flex-col overflow-hidden">
+        <div class="p-4 border-b border-border flex items-center gap-2">
+          <span id="currentPath" class="text-sm text-txt-secondary">폴더를 선택하세요</span>
+        </div>
+        <div id="links" class="flex-1 overflow-y-auto p-4 grid grid-cols-1 gap-3 content-start"></div>
+        <div id="emptyLinks" class="flex-1 items-center justify-center text-txt-disabled text-sm hidden">
+          <span>이 폴더에 링크가 없습니다</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action Bar -->
+    <div class="shrink-0 border-t border-border bg-bg-side px-5 py-3">
+      <div class="flex items-center justify-between">
+        <span id="selectionInfo" class="text-xs text-txt-secondary">항목을 선택하세요</span>
+        <div class="flex gap-2">
+          <button id="btnAddFolder" onclick="showAddFolderModal()" disabled
+            class="action-btn px-3 py-1.5 bg-accent-blue/20 text-accent-blue text-xs rounded-lg border border-accent-blue/30 hover:bg-accent-blue/30">
+            + 폴더 추가
+          </button>
+          <button id="btnAddLink" onclick="showAddLinkModal()" disabled
+            class="action-btn px-3 py-1.5 bg-accent-green/20 text-accent-green text-xs rounded-lg border border-accent-green/30 hover:bg-accent-green/30">
+            + 링크 추가
+          </button>
+          <button id="btnRename" onclick="showRenameModal()" disabled
+            class="action-btn px-3 py-1.5 bg-bg-card text-txt-secondary text-xs rounded-lg border border-border hover:text-txt-primary">
+            ✏️ 이름 변경
+          </button>
+          <button id="btnDelete" onclick="deleteSelected()" disabled
+            class="action-btn px-3 py-1.5 bg-accent-red/20 text-accent-red text-xs rounded-lg border border-accent-red/30 hover:bg-accent-red/30">
+            🗑 삭제
+          </button>
+        </div>
       </div>
     </div>
   </div>
@@ -119,25 +176,128 @@
   </div>
 
 <script>
-// ── Data Store (localStorage for v1) ──
-let folders = JSON.parse(localStorage.getItem('ls_folders') || '[]');
-let links = JSON.parse(localStorage.getItem('ls_links') || '[]');
-let logs = JSON.parse(localStorage.getItem('ls_logs') || '[]');
-
+// ── State ──
+let folders = [];
+let linksData = [];
+let logs = [];
+let currentUser = null;
 let selectedFolderId = null;
 let selectedLinkId = null;
+let unsubFolders = null;
+let unsubLinks = null;
+let unsubLogs = null;
 
-function save() {
-  localStorage.setItem('ls_folders', JSON.stringify(folders));
-  localStorage.setItem('ls_links', JSON.stringify(links));
-  localStorage.setItem('ls_logs', JSON.stringify(logs));
+// ── Auth ──
+async function doLogin() {
+  try {
+    await window.fbSignInWithPopup(window.fbAuth, window.fbGoogleProvider);
+  } catch(e) {
+    const errEl = document.getElementById('loginError');
+    errEl.textContent = '로그인 실패: ' + e.message;
+    errEl.classList.remove('hidden');
+  }
 }
 
-function genId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+async function doLogout() {
+  await window.fbSignOut(window.fbAuth);
+}
 
-function addLog(action, target, targetId, targetName, detail) {
-  logs.unshift({ id: genId(), action, target, targetId, targetName, timestamp: Date.now(), detail });
-  save();
+function onAuthChanged(user) {
+  currentUser = user;
+  if (user) {
+    document.getElementById('loginScreen').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('flex');
+    document.getElementById('userName').textContent = user.displayName || user.email;
+    startListening();
+  } else {
+    document.getElementById('loginScreen').classList.remove('hidden');
+    document.getElementById('mainApp').classList.add('hidden');
+    document.getElementById('mainApp').classList.remove('flex');
+    stopListening();
+    folders = [];
+    linksData = [];
+    logs = [];
+    updateUI();
+  }
+}
+
+// ── Firestore Listeners ──
+function startListening() {
+  const db = window.fbDb;
+
+  // Listen to folders
+  const foldersRef = window.fbCollection(db, 'folders');
+  const foldersQuery = window.fbQuery(foldersRef, window.fbOrderBy('order'));
+  unsubFolders = window.fbOnSnapshot(foldersQuery, (snapshot) => {
+    folders = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Filter: show shared + own private
+    folders = folders.filter(f =>
+      f.type === 'shared' || (f.type === 'private' && f.ownerId === currentUser.uid)
+    );
+    updateUI();
+  });
+
+  // Listen to links
+  const linksRef = window.fbCollection(db, 'links');
+  const linksQuery = window.fbQuery(linksRef, window.fbOrderBy('order'));
+  unsubLinks = window.fbOnSnapshot(linksQuery, (snapshot) => {
+    linksData = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    updateUI();
+  });
+
+  // Listen to logs
+  const logsRef = window.fbCollection(db, 'logs');
+  const logsQuery = window.fbQuery(logsRef, window.fbOrderBy('timestamp', 'desc'));
+  unsubLogs = window.fbOnSnapshot(logsQuery, (snapshot) => {
+    logs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    // Filter: show shared logs + own private logs
+    logs = logs.filter(l =>
+      l.folderType === 'shared' || !l.folderType || (l.folderType === 'private' && l.userId === currentUser.uid)
+    );
+  });
+}
+
+function stopListening() {
+  if (unsubFolders) unsubFolders();
+  if (unsubLinks) unsubLinks();
+  if (unsubLogs) unsubLogs();
+}
+
+// ── Firestore Write Operations ──
+async function addFolder(data) {
+  await window.fbAddDoc(window.fbCollection(window.fbDb, 'folders'), data);
+}
+
+async function addLink(data) {
+  return await window.fbAddDoc(window.fbCollection(window.fbDb, 'links'), data);
+}
+
+async function updateLink(id, data) {
+  await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'links', id), data);
+}
+
+async function updateFolder(id, data) {
+  await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'folders', id), data);
+}
+
+async function removeFolder(id) {
+  await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'folders', id));
+}
+
+async function removeLink(id) {
+  await window.fbDeleteDoc(window.fbDoc(window.fbDb, 'links', id));
+}
+
+async function addLogEntry(action, target, targetId, targetName, detail, folderType) {
+  await window.fbAddDoc(window.fbCollection(window.fbDb, 'logs'), {
+    action, target, targetId, targetName, detail,
+    folderType: folderType || 'shared',
+    userId: currentUser.uid,
+    user: currentUser.email,
+    userName: currentUser.displayName || currentUser.email,
+    timestamp: Date.now()
+  });
 }
 
 // ── Tree Rendering ──
@@ -148,15 +308,13 @@ function renderTree() {
   const sharedRoots = folders.filter(f => !f.parentId && f.type === 'shared');
   const privateRoots = folders.filter(f => !f.parentId && f.type === 'private');
 
-  if (sharedRoots.length > 0 || privateRoots.length > 0 || folders.length === 0) {
-    const sharedLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-1', '── 공유 ──');
-    tree.appendChild(sharedLabel);
-    sharedRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
+  const sharedLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-1', '── 공유 ──');
+  tree.appendChild(sharedLabel);
+  sharedRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
 
-    const privateLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-3', '── 개인 ──');
-    tree.appendChild(privateLabel);
-    privateRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
-  }
+  const privateLabel = el('div', 'px-2 py-1.5 text-[10px] text-txt-disabled font-bold uppercase tracking-widest mt-3', '── 개인 ──');
+  tree.appendChild(privateLabel);
+  privateRoots.forEach(f => tree.appendChild(renderTreeItem(f, 0)));
 }
 
 function renderTreeItem(folder, depth) {
@@ -170,7 +328,7 @@ function renderTreeItem(folder, depth) {
   const icon = folder.type === 'private' ? '🔒' : '📁';
   item.innerHTML = `<span>${icon}</span><span class="truncate flex-1">${esc(folder.name)}</span>${folder.id === selectedFolderId ? '<span class="text-accent-blue text-xs">◀</span>' : ''}`;
 
-  item.addEventListener('click', () => selectFolder(folder.id));
+  item.addEventListener('click', (e) => { e.stopPropagation(); selectFolder(folder.id); });
 
   wrapper.appendChild(item);
   children.forEach(c => wrapper.appendChild(renderTreeItem(c, depth + 1)));
@@ -191,7 +349,7 @@ function renderLinks() {
     return;
   }
 
-  const folderLinks = links.filter(l => l.folderId === selectedFolderId);
+  const folderLinks = linksData.filter(l => l.folderId === selectedFolderId);
 
   if (folderLinks.length === 0) {
     container.classList.add('hidden');
@@ -274,7 +432,7 @@ function updateActionBar() {
   const btnDelete = document.getElementById('btnDelete');
 
   if (selectedLinkId) {
-    const link = links.find(l => l.id === selectedLinkId);
+    const link = linksData.find(l => l.id === selectedLinkId);
     info.textContent = `선택: 🔗 ${link ? link.title || link.url : ''}`;
     btnAddFolder.disabled = true;
     btnAddLink.disabled = true;
@@ -333,7 +491,7 @@ function showAddFolderModal() {
     ${typeSelect}
     <label class="text-xs text-txt-secondary block mb-1">폴더 이름</label>
     <input id="folderNameInput" type="text" placeholder="폴더 이름 입력" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
-  `, () => {
+  `, async () => {
     const name = document.getElementById('folderNameInput').value.trim();
     if (!name) return;
 
@@ -347,11 +505,16 @@ function showAddFolderModal() {
       parentId = null;
     }
 
-    const folder = { id: genId(), name, parentId, type, ownerId: type === 'private' ? 'local' : null, order: folders.length, createdAt: Date.now() };
-    folders.push(folder);
-    save();
-    addLog('create', 'folder', folder.id, name, `폴더 생성: ${name}`);
-    selectFolder(folder.id);
+    await addFolder({
+      name, parentId, type,
+      ownerId: type === 'private' ? currentUser.uid : null,
+      order: folders.length,
+      createdBy: currentUser.email,
+      createdAt: Date.now(),
+      updatedBy: currentUser.email,
+      updatedAt: Date.now()
+    });
+    await addLogEntry('create', 'folder', '', name, `폴더 생성: ${name}`, type);
   });
 }
 
@@ -363,31 +526,37 @@ function showAddLinkModal() {
     <input id="linkUrlInput" type="text" placeholder="https://example.com" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition mb-3">
     <label class="text-xs text-txt-secondary block mb-1">제목 (비워두면 자동 추출)</label>
     <input id="linkTitleInput" type="text" placeholder="선택사항" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
-    <div id="ogStatus" class="text-xs text-txt-disabled mt-2 hidden"></div>
   `, async () => {
     let url = document.getElementById('linkUrlInput').value.trim();
     const title = document.getElementById('linkTitleInput').value.trim();
     if (!url) return;
     if (!url.startsWith('http')) url = 'https://' + url;
 
-    const link = { id: genId(), folderId: selectedFolderId, title: title || url, url, ogTitle: '', ogDescription: '', ogImage: '', favicon: '', order: links.length, createdAt: Date.now() };
-    links.push(link);
-    save();
-    addLog('create', 'link', link.id, link.title, `링크 추가: ${link.title} (${url})`);
-    updateUI();
+    const folder = folders.find(f => f.id === selectedFolderId);
+    const folderType = folder ? getRootFolder(folder.id)?.type || 'shared' : 'shared';
+
+    const docRef = await addLink({
+      folderId: selectedFolderId,
+      title: title || url, url,
+      ogTitle: '', ogDescription: '', ogImage: '', favicon: '',
+      order: linksData.length,
+      createdBy: currentUser.email,
+      createdAt: Date.now(),
+      updatedBy: currentUser.email,
+      updatedAt: Date.now()
+    });
+    await addLogEntry('create', 'link', docRef.id, title || url, `링크 추가: ${title || url} (${url})`, folderType);
 
     // Fetch OG data in background
     try {
       const og = await window.electronAPI.fetchOG(url);
-      const idx = links.findIndex(l => l.id === link.id);
-      if (idx !== -1) {
-        if (og.ogTitle && !title) links[idx].title = og.ogTitle;
-        links[idx].ogTitle = og.ogTitle;
-        links[idx].ogDescription = og.ogDescription;
-        links[idx].ogImage = og.ogImage;
-        links[idx].favicon = og.favicon;
-        save();
-        updateUI();
+      const updateData = {};
+      if (og.ogTitle) { updateData.ogTitle = og.ogTitle; if (!title) updateData.title = og.ogTitle; }
+      if (og.ogDescription) updateData.ogDescription = og.ogDescription;
+      if (og.ogImage) updateData.ogImage = og.ogImage;
+      if (og.favicon) updateData.favicon = og.favicon;
+      if (Object.keys(updateData).length > 0) {
+        await updateLink(docRef.id, updateData);
       }
     } catch(e) {}
   });
@@ -395,21 +564,24 @@ function showAddLinkModal() {
 
 function showRenameModal() {
   if (selectedLinkId) {
-    const link = links.find(l => l.id === selectedLinkId);
+    const link = linksData.find(l => l.id === selectedLinkId);
     if (!link) return;
     openModal('링크 수정', `
       <label class="text-xs text-txt-secondary block mb-1">제목</label>
       <input id="renameInput" type="text" value="${esc(link.title)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition mb-3">
       <label class="text-xs text-txt-secondary block mb-1">URL</label>
       <input id="renameUrlInput" type="text" value="${esc(link.url)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
-    `, () => {
+    `, async () => {
       const newTitle = document.getElementById('renameInput').value.trim();
       const newUrl = document.getElementById('renameUrlInput').value.trim();
-      if (newTitle) link.title = newTitle;
-      if (newUrl) link.url = newUrl;
-      save();
-      addLog('update', 'link', link.id, link.title, `링크 수정: ${link.title}`);
-      updateUI();
+      const updates = { updatedBy: currentUser.email, updatedAt: Date.now() };
+      if (newTitle) updates.title = newTitle;
+      if (newUrl) updates.url = newUrl;
+      await updateLink(link.id, updates);
+
+      const folder = folders.find(f => f.id === link.folderId);
+      const folderType = folder ? getRootFolder(folder.id)?.type || 'shared' : 'shared';
+      await addLogEntry('update', 'link', link.id, newTitle || link.title, `링크 수정: ${newTitle || link.title}`, folderType);
     });
   } else if (selectedFolderId) {
     const folder = folders.find(f => f.id === selectedFolderId);
@@ -417,13 +589,11 @@ function showRenameModal() {
     openModal('폴더 이름 변경', `
       <label class="text-xs text-txt-secondary block mb-1">폴더 이름</label>
       <input id="renameInput" type="text" value="${esc(folder.name)}" class="w-full bg-bg-main border border-border rounded-lg px-3 py-2 text-sm text-txt-primary outline-none focus:border-accent-blue transition">
-    `, () => {
+    `, async () => {
       const newName = document.getElementById('renameInput').value.trim();
       if (newName) {
-        folder.name = newName;
-        save();
-        addLog('update', 'folder', folder.id, newName, `폴더 이름 변경: ${newName}`);
-        updateUI();
+        await updateFolder(folder.id, { name: newName, updatedBy: currentUser.email, updatedAt: Date.now() });
+        await addLogEntry('update', 'folder', folder.id, newName, `폴더 이름 변경: ${newName}`, folder.type);
       }
     });
   }
@@ -431,23 +601,23 @@ function showRenameModal() {
 
 function deleteSelected() {
   if (selectedLinkId) {
-    const link = links.find(l => l.id === selectedLinkId);
+    const link = linksData.find(l => l.id === selectedLinkId);
     if (!link) return;
     openModal('링크 삭제', `
       <p class="text-sm text-txt-secondary">"<span class="text-txt-primary">${esc(link.title)}</span>" 링크를 삭제하시겠습니까?</p>
-    `, () => {
-      links = links.filter(l => l.id !== selectedLinkId);
-      addLog('delete', 'link', link.id, link.title, `링크 삭제: ${link.title}`);
+    `, async () => {
+      const folder = folders.find(f => f.id === link.folderId);
+      const folderType = folder ? getRootFolder(folder.id)?.type || 'shared' : 'shared';
+      await removeLink(link.id);
+      await addLogEntry('delete', 'link', link.id, link.title, `링크 삭제: ${link.title}`, folderType);
       selectedLinkId = null;
-      save();
-      updateUI();
     });
   } else if (selectedFolderId) {
     const folder = folders.find(f => f.id === selectedFolderId);
     if (!folder) return;
 
     const hasChildren = folders.some(f => f.parentId === selectedFolderId);
-    const hasLinks = links.some(l => l.folderId === selectedFolderId);
+    const hasLinks = linksData.some(l => l.folderId === selectedFolderId);
     if (hasChildren || hasLinks) {
       openModal('삭제 불가', `
         <p class="text-sm text-txt-secondary">하위 항목이 있어 삭제할 수 없습니다.<br>하위 폴더와 링크를 먼저 삭제해주세요.</p>
@@ -457,12 +627,10 @@ function deleteSelected() {
 
     openModal('폴더 삭제', `
       <p class="text-sm text-txt-secondary">"<span class="text-txt-primary">${esc(folder.name)}</span>" 폴더를 삭제하시겠습니까?</p>
-    `, () => {
-      folders = folders.filter(f => f.id !== selectedFolderId);
-      addLog('delete', 'folder', folder.id, folder.name, `폴더 삭제: ${folder.name}`);
+    `, async () => {
+      await removeFolder(folder.id);
+      await addLogEntry('delete', 'folder', folder.id, folder.name, `폴더 삭제: ${folder.name}`, folder.type);
       selectedFolderId = null;
-      save();
-      updateUI();
     });
   }
 }
@@ -476,9 +644,22 @@ function showLogs() {
   } else {
     logs.slice(0, 50).forEach(log => {
       const time = getTimeAgo(log.timestamp);
-      const div = el('div', 'flex items-center gap-3 p-3 rounded-lg bg-bg-main text-sm', '');
+      const div = document.createElement('div');
+      div.className = 'flex flex-col gap-1.5 p-4 rounded-xl bg-bg-main border border-border';
       const actionIcon = log.action === 'create' ? '➕' : log.action === 'update' ? '✏️' : '🗑';
-      div.innerHTML = `<span>${actionIcon}</span><span class="flex-1 text-txt-secondary">${esc(log.detail)}</span><span class="text-xs text-txt-disabled shrink-0">${time}</span>`;
+      const actionLabel = log.action === 'create' ? '추가' : log.action === 'update' ? '수정' : '삭제';
+      const who = log.userName || log.user || '';
+      div.innerHTML = `
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-2">
+            <span class="text-base">${actionIcon}</span>
+            <span class="text-sm font-medium text-accent-blue">${esc(who)}</span>
+            <span class="text-xs px-2 py-0.5 rounded-full bg-bg-hover text-txt-secondary">${actionLabel}</span>
+          </div>
+          <span class="text-xs text-txt-disabled">${time}</span>
+        </div>
+        <div class="text-sm text-txt-primary pl-7">${esc(log.detail)}</div>
+      `;
       list.appendChild(div);
     });
   }
@@ -515,7 +696,7 @@ function getTimeAgo(ts) {
 
 function esc(str) {
   const d = document.createElement('div');
-  d.textContent = str;
+  d.textContent = str || '';
   return d.innerHTML;
 }
 
@@ -540,8 +721,16 @@ document.addEventListener('keydown', (e) => {
   if (e.key === 'Delete' && !document.querySelector('#modal:not(.hidden)')) deleteSelected();
 });
 
-// Init
-updateUI();
+// ── Init: Wait for Firebase ──
+function init() {
+  window.fbOnAuthStateChanged(window.fbAuth, onAuthChanged);
+}
+
+if (window.firebaseReady) {
+  init();
+} else {
+  window.onFirebaseReady = init;
+}
 </script>
 </body>
 </html>
