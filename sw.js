@@ -1,4 +1,4 @@
-const CACHE_NAME = 'linkshare-v3';
+const CACHE_NAME = 'linkshare-v4';
 const APP_SHELL = [
   '/',
   '/index.html',
