@@ -298,6 +298,8 @@ function startListening() {
       (f.type === 'shared' && !f.groupId) ||
       (f.type === 'private' && f.ownerId === currentUser.uid)
     );
+    // 기존 공유폴더 자동 마이그레이션
+    migrateLegacyFolders();
     updateUI();
   });
 
@@ -1094,6 +1096,45 @@ function closeSidebar() {
     }
   });
 })();
+
+// ── Legacy Migration: 기존 공유폴더를 그룹으로 이동 ──
+let migrationDone = false;
+async function migrateLegacyFolders() {
+  if (migrationDone) return;
+  const legacyRoots = folders.filter(f => !f.parentId && f.type === 'shared' && !f.groupId);
+  if (legacyRoots.length === 0) { migrationDone = true; return; }
+
+  // 이미 "기본 공유" 그룹이 있는지 확인
+  const q = window.fbQuery(
+    window.fbCollection(window.fbDb, 'groups'),
+    window.fbWhere('name', '==', '기본 공유'),
+    window.fbWhere('ownerId', '==', currentUser.uid)
+  );
+  const snap = await window.fbGetDocs(q);
+  let groupId;
+  if (snap.empty) {
+    const docRef = await window.fbAddDoc(window.fbCollection(window.fbDb, 'groups'), {
+      name: '기본 공유',
+      ownerId: currentUser.uid,
+      ownerName: currentUser.displayName || currentUser.email,
+      members: [currentUser.uid],
+      memberNames: { [currentUser.uid]: currentUser.displayName || currentUser.email },
+      inviteCode: null,
+      inviteCodeExpiry: null,
+      createdAt: Date.now()
+    });
+    groupId = docRef.id;
+  } else {
+    groupId = snap.docs[0].id;
+  }
+
+  // 모든 레거시 공유 폴더(루트 + 하위)에 groupId 부여
+  const allLegacy = folders.filter(f => f.type === 'shared' && !f.groupId);
+  for (const f of allLegacy) {
+    await window.fbUpdateDoc(window.fbDoc(window.fbDb, 'folders', f.id), { groupId });
+  }
+  migrationDone = true;
+}
 
 // ── Init: Wait for Firebase ──
 function init() {
