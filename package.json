@@ -1,6 +1,6 @@
 {
   "name": "linkshare",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Link sharing app with folder structure",
   "main": "main.js",
   "scripts": {
@@ -18,7 +18,9 @@
     "files": [
       "main.js",
       "preload.js",
-      "index.html"
+      "index.html",
+      "manifest.json",
+      "sw.js"
     ],
     "publish": {
       "provider": "github",
