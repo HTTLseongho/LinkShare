@@ -1,6 +1,6 @@
 {
   "name": "linkshare",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Link sharing app with folder structure",
   "main": "main.js",
   "scripts": {

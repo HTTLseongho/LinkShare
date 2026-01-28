@@ -119,6 +119,43 @@ ipcMain.handle('fetch-og', async (event, url) => {
 
 app.whenReady().then(() => {
   createWindow();
+
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    console.log('Checking for update...');
+  });
+  autoUpdater.on('update-available', (info) => {
+    console.log('Update available:', info.version);
+    mainWindow.webContents.executeJavaScript(
+      `document.title = 'LinkShare - 업데이트 다운로드 중 (v${info.version})...'`
+    );
+  });
+  autoUpdater.on('update-not-available', () => {
+    console.log('Update not available - current version is latest');
+  });
+  autoUpdater.on('download-progress', (prog) => {
+    console.log('Download progress:', Math.round(prog.percent) + '%');
+  });
+  autoUpdater.on('update-downloaded', (info) => {
+    console.log('Update downloaded:', info.version);
+    const { dialog } = require('electron');
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '업데이트 완료',
+      message: `v${info.version} 업데이트가 준비되었습니다.\n앱을 재시작하면 적용됩니다.`,
+      buttons: ['지금 재시작', '나중에']
+    }).then((result) => {
+      if (result.response === 0) {
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+  autoUpdater.on('error', (err) => {
+    console.log('Update error:', err.message);
+  });
+
   autoUpdater.checkForUpdatesAndNotify();
 });
 
